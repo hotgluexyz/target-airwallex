@@ -11,8 +11,8 @@ class FallbackSink(HotglueSink):
     @property
     def base_url(self) -> str:
         if self.config.get("sandbox"):
-            return "https://api.airwallex.com/public_api/v1/"
-        return "https://api-demo.airwallex.com/public_api/v1"
+            return "https://api-demo.airwallex.com/public_api/v1"
+        return "https://api.airwallex.com/public_api/v1"
     
     @property
     def name(self) -> str:
