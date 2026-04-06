@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "target-airwallex"
+version = "0.1.0"
+description = "`target-airwallex` is a Singer target for airwallex, built with the Meltano SDK for Singer Targets."
+authors = ["hotglue"]
+keywords = [
+    "ELT",
+    "airwallex",
+]
+license = "Apache 2.0"
+
+[tool.poetry.dependencies]
+python = "<3.11,>=3.7.1"
+requests = "^2.25.1"
+hotglue-singer-sdk = "^1.0.11"
+
+[build-system]
+requires = ["poetry-core==1.0.8"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+# CLI declaration
+target-airwallex = 'target_airwallex.target:TargetAirwallex.cli'
