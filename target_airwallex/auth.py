@@ -49,11 +49,9 @@ class AirwallexAuthenticator(OAuthAuthenticator):
         expires_in = token_json.get("expires_at")
         self.expires_in = parse(expires_in).timestamp()
 
-        # Update the tap config with the new access_token and refresh_token
         self._config["access_token"] = token_json["token"]
         self._config["expires_in"] = self.expires_in
 
-        # Write the updated config back to the file (only when config was loaded from a path)
         if self._config_file_path is not None:
             with open(self._config_file_path, "w") as outfile:
                 json.dump(self._config, outfile, indent=4)
