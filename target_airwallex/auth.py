@@ -20,11 +20,6 @@ class AirwallexAuthenticator(OAuthAuthenticator):
             "x-client-id": self._config["client_id"]
         }
     
-    @property
-    def auth_headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self._config.get('access_token')}"
-        }
 
     def is_token_valid(self) -> bool:
         """Check if token is valid.
@@ -35,7 +30,6 @@ class AirwallexAuthenticator(OAuthAuthenticator):
         # if expires_in is not set, try to get it from the tap config
         if self.expires_in is None and self._config.get("expires_in"):
             self.expires_in = self._config.get("expires_in")
-            self.expires_in = parse(self.expires_in).timestamp()
         if not self.expires_in:
             return False
         if int(self.expires_in) - int(datetime.utcnow().timestamp()) > 120:

@@ -8,7 +8,7 @@ class VendorSink(AirwallexSink):
     endpoint = "/spend/vendors/create"
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
-        address = record.get("addresses")[0] or {}
+        address = record.get("addresses")[0] if record.get("addresses") else {}
         email = record.get("email")
         payload = {
             "externalId": record.get("externalId"),
