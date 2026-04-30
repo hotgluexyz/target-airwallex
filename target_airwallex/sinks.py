@@ -1,45 +1,52 @@
 from hotglue_singer_sdk.target_sdk.client import HotglueSink
+import uuid
+from target_airwallex.client import AirwallexSink
 
-from target_airwallex.auth import AirwallexAuthenticator
 
-
-class FallbackSink(HotglueSink):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.authenticator = AirwallexAuthenticator(self._target, self._state)
-    
-    @property
-    def base_url(self) -> str:
-        if self.config.get("sandbox"):
-            return "https://api-demo.airwallex.com/public_api/v1"
-        return "https://api.airwallex.com/public_api/v1"
-    
-    @property
-    def name(self) -> str:
-        return self.stream_name
+class VendorSink(AirwallexSink):
+    name = "Vendors"
+    endpoint = "/spend/vendors/create"
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
-        return record
+        address = record.get("addresses")[0] or {}
+        email = record.get("email")
+        payload = {
+            "externalId": record.get("externalId"),
+            "request_id": uuid.uuid4(), #idempotency key
+            "external_id": record.get("externalId"),
+            "name": record.get("vendorName"),
+            "address": {
+                "street_address": address.get("line1"),
+                "city": address.get("city"),
+                "state": address.get("state"),
+                "postcode": address.get("zipCode"),
+                "country_code": address.get("country")
+            },
+            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
+        }
+
+        if email:
+            payload.update({
+                "contacts": [
+                    {
+                        "email": email
+                    }
+                ]
+            })
+
+        if record.get("customFields"):
+            custom_fields = {field.get("name"): field.get("value") for field in record.get("customFields")}
+            payload.update(custom_fields)
+        return payload
 
     def upsert_record(self, record: dict, context: dict):
         record_id = record.pop("id", None)
-        is_update = record_id is not None
-
-        endpoint = f"/{self.name}"
+        if record_id:
+            self.logger.info(f"Vendor only allows status update, skipping update for {record_id}")
+            return record_id, True, {"existing": True}
+        
+        endpoint = self.endpoint
         method = "POST"
-        payload = [record]
-
-        if is_update:
-            endpoint = f"/{self.name}/{record_id}"
-            method = "PATCH"
-            payload = record
-
-        response = self.request_api(method, endpoint, request_data=payload)
-        id = response.json().get("id")
-
-        state_updates = {}
-        if is_update and response.ok:
-            state_updates = {"is_updated": True}
-
-        return id, response.ok, state_updates
+        response = self.request_api(method, endpoint, request_data=record)
+        return response.json().get("id"), True, {}
     
