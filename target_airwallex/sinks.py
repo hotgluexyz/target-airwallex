@@ -40,6 +40,13 @@ class VendorSink(AirwallexSink):
         return payload
 
     def upsert_record(self, record: dict, context: dict):
+        # lookup vendor by name
+        vendor = next((v for v in self.vendors if v.get("name") == record.get("name")), None)
+        if vendor:
+            self.logger.info(f"Vendor {record.get('name')} already exists with id {vendor.get('id')}")
+            return vendor.get("id"), True, {"existing": True}
+
+        # if vendor has id, mark as existing, only status can be updated
         record_id = record.pop("id", None)
         if record_id:
             self.logger.info(f"Vendor only allows status update, skipping update for {record_id}")

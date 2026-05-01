@@ -12,6 +12,7 @@ class TargetAirwallex(TargetHotglue):
     """Sample target for airwallex."""
 
     name = "target-airwallex"
+    reference_data = {}
 
     config_jsonschema = th.PropertiesList(
         th.Property("api_key", th.StringType, required=True),
