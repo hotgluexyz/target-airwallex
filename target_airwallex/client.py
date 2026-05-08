@@ -25,17 +25,14 @@ class AirwallexSink(HotglueSink):
         return AirwallexAuthenticator(self._target, {}, auth_endpoint)
 
     def get_data(self, endpoint: str) -> list[dict]:
-        params = None
+        params = {}
         data = []
         while True:
             response = self.request_api("GET", endpoint, params=params)
             data.extend(response.json().get("items", []))
             cursor = response.json().get("page_after")
             if cursor is not None:
-                if params is None:
-                    params = {"page": cursor}
-                else:
-                    params["page"] = cursor
+                params = {"page": cursor}
             else:
                 break
         return data

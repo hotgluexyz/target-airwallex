@@ -17,7 +17,7 @@ class TargetAirwallex(TargetHotglue):
     config_jsonschema = th.PropertiesList(
         th.Property("api_key", th.StringType, required=True),
         th.Property("client_id", th.StringType, required=True),
-        th.Property("sandbox", th.BooleanType, required=False, default=False),
+        th.Property("is_sandbox", th.BooleanType, required=False, default=False),
     ).to_dict()
 
     SINK_TYPES = [VendorSink]
