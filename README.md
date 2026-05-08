@@ -4,7 +4,7 @@
 
 ## Overview
 
-This target syncs data to Airwallex over their REST API. It uses a generic sink: each Singer stream name is sent to `POST /{stream}` for creates and `PATCH /{stream}/{id}` when a record includes an `id` (update).
+This target sends Spend **vendor** data to the Airwallex REST API. It authenticates with API credentials, obtains a bearer token, and uses a dedicated `VendorSink` that maps tap records into Airwallex’s vendor-create payload. Updates are not sent over the API for existing vendors (records with an `id` are skipped after logging).
 
 ## Installation
 
@@ -26,20 +26,20 @@ pip install .
 
 | Setting     | Description |
 |-------------|-------------|
-| `api_key`   | Your Airwallex API key |
-| `client_id` | Your Airwallex client ID (used when obtaining an access token) |
+| `api_key`   | Your Airwallex API key (`x-api-key` on the login request) |
+| `client_id` | Your Airwallex client ID (`x-client-id` on the login request) |
 
-The target’s config schema currently marks `api_key` as required; `client_id` is required by the authenticator at runtime—ensure both are present in your config.
+These match the target’s JSON Schema in `target_airwallex/target.py`.
 
 ### Optional settings
 
-| Setting   | Description |
-|-----------|-------------|
-| `sandbox` | When `true`, uses the production API host URL configured in code; when `false` or omitted, uses the demo API host. Adjust to match how you deploy. |
+| Setting   | Default | Description |
+|-----------|---------|-------------|
+| `sandbox` | `false` | Selects demo vs production API host (see below). |
 
-Token-related fields (`access_token`, `expires_at`, etc.) may be supplied by your tap or initial auth flow so the target can refresh or reuse tokens. See `target_airwallex/auth.py` for the exact behavior.
+After a successful login, the authenticator may persist `access_token` and `expires_in` back into your config file when the target is run with a config path. Ensure the process can write to that file if you rely on token reuse. See `target_airwallex/auth.py` for the token exchange flow.
 
-Create a `config.json` file (example—add fields your environment needs):
+Example `config.json`:
 
 ```json
 {
@@ -51,20 +51,39 @@ Create a `config.json` file (example—add fields your environment needs):
 
 ### API base URLs
 
-The sink selects a base URL from the `sandbox` flag:
+`AirwallexSink` picks the base URL in `target_airwallex/client.py`:
 
-- **`sandbox: true`**: `https://api.airwallex.com/public_api/v1/`
-- **`sandbox: false` (default)**: `https://api-demo.airwallex.com/public_api/v1`
+| `sandbox` | Base URL |
+|-----------|----------|
+| `true`    | `https://api-demo.airwallex.com/public_api/v1` |
+| `false` or omitted | `https://api.airwallex.com/public_api/v1` |
 
-Confirm paths and hosts against the [Airwallex API documentation](https://www.airwallex.com/docs/api) for your integration.
+Confirm paths and versions against the [Airwallex API documentation](https://www.airwallex.com/docs/api).
 
 ## Supported streams
 
-There is no fixed list of streams in code: any stream name from the tap is used as the API path segment. Payload shape must match what the Airwallex API expects for that resource.
+### Vendors
 
-**Create:** records without an `id` (or with `id` removed before send, depending on stream) are sent with `POST /{stream_name}` as a JSON array with one element.
+Sink class: `VendorSink` (`target_airwallex/sinks.py`). Intended for a Singer stream whose catalog name matches **Vendors** (used for external-id handling in the SDK).
 
-**Update:** records that still have an `id` after processing use `PATCH /{stream_name}/{id}` with the record body.
+**Behavior**
+
+- **Create:** `POST /{stream_name}` with the body produced by `preprocess_record` (see below).
+- **Update:** If the record still has an `id` after preprocessing, the target logs and returns success without calling the vendor update API (Airwallex vendor updates are limited in this target).
+
+**Input → payload mapping**
+
+`preprocess_record` builds an Airwallex-style vendor object from fields such as:
+
+| Input (tap record) | Output field |
+|--------------------|--------------|
+| `externalId`       | `external_id` |
+| `name`             | `name` |
+| `email`            | first contact `email` |
+| `addresses[0]`     | `address`: `line1` → `street_address`, `city`, `state`, `zipCode` → `postcode`, `country` → `country_code` |
+| `customFields`     | merged in as `{ name: value }` entries |
+
+Adjust the tap so records include the keys your integration needs (and valid `addresses` when used).
 
 ## Usage
 
@@ -80,6 +99,10 @@ target-airwallex --help
 # Run with a tap
 tap-some-source | target-airwallex --config config.json
 ```
+
+### Local debugging (VS Code)
+
+The repo includes `.vscode/launch.json` that runs the target with stdin from `.secrets/data.singer` and config `.secrets/config.json`. Point `program` and `cwd` at your machine paths if you use that layout.
 
 ## Development
 
