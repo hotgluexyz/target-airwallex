@@ -55,5 +55,10 @@ class VendorSink(AirwallexSink):
         endpoint = self.endpoint
         method = "POST"
         response = self.request_api(method, endpoint, request_data=record)
+        # add response to reference data
+        self._target.reference_data["vendors"].append({
+            "id": response.json().get("id"),
+            "name": response.json().get("name")
+        })
         return response.json().get("id"), True, {}
     
