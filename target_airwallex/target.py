@@ -1,8 +1,6 @@
 """airwallex target class."""
 
-from typing import Type
 from hotglue_singer_sdk import typing as th
-from hotglue_singer_sdk.sinks import Sink
 from hotglue_singer_sdk.target_sdk.target import TargetHotglue
 
 from target_airwallex.sinks import VendorSink

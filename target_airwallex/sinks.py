@@ -1,4 +1,3 @@
-from hotglue_singer_sdk.target_sdk.client import HotglueSink
 import uuid
 from target_airwallex.client import AirwallexSink
 
