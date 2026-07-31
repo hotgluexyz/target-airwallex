@@ -86,7 +86,7 @@ class AccountSink(AirwallexSink):
         record, skip = self.get_account(record)
         if skip:
             self.logger.info(
-                f"Account {record.get('name')} already exists with id {record.get('id')}"
+                f"Account {record.get('value') or record.get('value_label')} already exists with id {record.get('id')}"
             )
             return record.get("id"), True, {"existing": True}
 
@@ -104,10 +104,18 @@ class AccountSink(AirwallexSink):
         response_json = self.request_api(
             "POST", endpoint, request_data=record
         ).json()
-        self._target.reference_data["accounts"].append({
+        account_entry = {
             "id": response_json.get("id"),
             "code": response_json.get("code"),
             "legal_entity_ids": response_json.get("legal_entity_ids"),
             "value": response_json.get("value"),
-        })
+        }
+        accounts = self._target.reference_data["accounts"]
+        if record_id:
+            for i, existing in enumerate(accounts):
+                if existing.get("id") == account_entry["id"]:
+                    accounts[i] = account_entry
+                    break
+        else:
+            accounts.append(account_entry)
         return response_json.get("id"), True, state

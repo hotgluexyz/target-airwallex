@@ -27,7 +27,7 @@ class AccountingFieldsSink(AirwallexSink):
             (
                 af
                 for af in self.accounting_fields
-                if ((af.get("name_label") == record.get("name_label")) or record.get("id") == af.get("id"))
+                if ((record.get("id") == af.get("id")) or (af.get("name_label") == record.get("name_label")))
             ),
             None,
         )
@@ -70,16 +70,16 @@ class AccountingFieldsSink(AirwallexSink):
         return field_id, True, state
 
     def _next_custom_field_name(self) -> str:
-        """Return the next Airwallex internal name, e.g. 'Custom field 3'."""
-        if not self.accounting_fields:
-            return "Custom field 1"
-
-        latest = max(
-            self.accounting_fields,
-            key=lambda x: int(x.get("name").split(" ")[-1]),
-        )
-        next_number = int(latest.get("name").split(" ")[-1]) + 1
-        return f"Custom field {next_number}"
+        """Return the next free Airwallex slot name in Custom field 1–5."""
+        used = {
+            int(af.get("name").split(" ")[-1])
+            for af in self.accounting_fields
+            if af.get("name")
+        }
+        for n in range(1, MAX_ACCOUNTING_FIELDS + 1):
+            if n not in used:
+                return f"Custom field {n}"
+        raise Exception("No free Custom field slots available (1–5)")
 
 
 class AccountingFieldsValuesSink(AirwallexSink):
