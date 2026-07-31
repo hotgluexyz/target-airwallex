@@ -1,4 +1,5 @@
 import uuid
+
 from target_airwallex.client import AirwallexSink
 
 
@@ -61,3 +62,52 @@ class VendorSink(AirwallexSink):
         })
         return response.json().get("id"), True, {}
     
+
+class AccountSink(AirwallexSink):
+
+    name = "Accounts"
+    endpoint = "/accounting/gl_accounts/create"
+
+    def preprocess_record(self, record: dict, context: dict) -> dict:
+        legal_entity_ids = [sub.get("id") for sub in record.get("subsidiaryRef")]
+        payload = {
+            "code": record.get("accountNumber"),
+            "value": record.get("name"),
+            "value_label": record.get("name"),
+            "legal_entity_ids": legal_entity_ids,
+            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
+            "id": record.get("id"),
+            "external_id": record.get("externalId"),
+            "externalId": record.get("externalId"),
+        }
+        return self.add_request_id(payload)
+
+    def upsert_record(self, record: dict, context: dict):
+        record, skip = self.get_account(record)
+        if skip:
+            self.logger.info(
+                f"Account {record.get('name')} already exists with id {record.get('id')}"
+            )
+            return record.get("id"), True, {"existing": True}
+
+        record_id = record.pop("id", None)
+        state = {}
+        endpoint = self.endpoint
+
+        if record_id:
+            endpoint = f"/accounting/gl_accounts/{record_id}/update"
+            record.pop("request_id", None)
+            state = {"is_updated": True}
+        else:
+            record.pop("status", None)
+
+        response_json = self.request_api(
+            "POST", endpoint, request_data=record
+        ).json()
+        self._target.reference_data["accounts"].append({
+            "id": response_json.get("id"),
+            "code": response_json.get("code"),
+            "legal_entity_ids": response_json.get("legal_entity_ids"),
+            "value": response_json.get("value"),
+        })
+        return response_json.get("id"), True, state
