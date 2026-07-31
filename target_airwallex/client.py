@@ -8,7 +8,7 @@ class AirwallexSink(HotglueSink):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
-    allows_externalid = ["Vendors"]
+    allows_externalid = ["Vendors", "Accounts"]
     
     @property
     def base_url(self) -> str:
@@ -77,7 +77,7 @@ class AirwallexSink(HotglueSink):
         """Resolve an account against existing Airwallex GL accounts.
 
         Logic added to not update existing accounts that don't belong to a new hg integration
-        
+
         Returns (record, skip) where skip=True means mark as existing and do not
         create/update. Creating with a code/value that already exists fails;
         updating replaces code/value for all legal entities and dropping entities
