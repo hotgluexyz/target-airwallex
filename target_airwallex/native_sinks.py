@@ -20,13 +20,14 @@ class AccountingFieldsSink(AirwallexSink):
     def upsert_record(self, record: dict, context: dict):
         state = {}
         endpoint = self.endpoint
+        update_reference_date = True
 
         # Match an existing field by display label.
         accounting_field = next(
             (
                 af
                 for af in self.accounting_fields
-                if af.get("name_label") == record.get("name_label")
+                if ((af.get("name_label") == record.get("name_label")) or record.get("id") == af.get("id"))
             ),
             None,
         )
@@ -41,6 +42,7 @@ class AccountingFieldsSink(AirwallexSink):
             endpoint = f"/accounting/accounting_fields/{record.pop('id')}/update"
             record["name"] = accounting_field.get("name")
             state["is_updated"] = True
+            update_reference_date = False
         elif not accounting_field and not record.get("id"):
             # Brand-new field → create. Assign next "Custom field N" slot 
             record = self.add_request_id(record)
@@ -57,16 +59,21 @@ class AccountingFieldsSink(AirwallexSink):
         ).json()
         field_id = response_json.get("id")
 
-        # Keep in-run cache in sync so later records in this job see the new field.
-        self.accounting_fields.append({
-            "id": field_id,
-            "name_label": record.get("name_label"),
-            "name": record.get("name"),
-        })
+        if update_reference_date: 
+            # Keep in-run cache in sync so later records in this job see the new field.
+            self.accounting_fields.append({
+                "id": field_id,
+                "name_label": record.get("name_label"),
+                "name": record.get("name"),
+            })
+
         return field_id, True, state
 
     def _next_custom_field_name(self) -> str:
         """Return the next Airwallex internal name, e.g. 'Custom field 3'."""
+        if not self.accounting_fields:
+            return "Custom field 1"
+
         latest = max(
             self.accounting_fields,
             key=lambda x: int(x.get("name").split(" ")[-1]),
@@ -100,4 +107,4 @@ class AccountingFieldsValuesSink(AirwallexSink):
         response = self.request_api(
             "POST", endpoint, request_data=record
         )   
-        return response.get("id"), True, state
+        return response.json().get("id"), True, state
