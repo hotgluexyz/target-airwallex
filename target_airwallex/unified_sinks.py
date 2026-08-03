@@ -1,5 +1,3 @@
-import uuid
-
 from target_airwallex.client import AirwallexSink
 
 
@@ -12,7 +10,6 @@ class VendorSink(AirwallexSink):
         email = record.get("email")
         payload = {
             "externalId": record.get("externalId"),
-            "request_id": uuid.uuid4(), #idempotency key
             "external_id": record.get("externalId"),
             "name": record.get("vendorName"),
             "address": {
@@ -37,7 +34,7 @@ class VendorSink(AirwallexSink):
         if record.get("customFields"):
             custom_fields = {field.get("name"): field.get("value") for field in record.get("customFields")}
             payload.update(custom_fields)
-        return payload
+        return self.add_request_id(payload)
 
     def upsert_record(self, record: dict, context: dict):
         # lookup vendor by name
