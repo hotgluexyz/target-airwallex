@@ -4,6 +4,7 @@ from target_airwallex.client import AirwallexSink
 class VendorSink(AirwallexSink):
     name = "Vendors"
     endpoint = "/spend/vendors/create"
+    max_concurrent_requests = 20
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
         address = record.get("addresses")[0] if record.get("addresses") else {}
@@ -52,12 +53,14 @@ class VendorSink(AirwallexSink):
         endpoint = self.endpoint
         method = "POST"
         response = self.request_api(method, endpoint, request_data=record)
-        # add response to reference data
-        self._target.reference_data["vendors"].append({
-            "id": response.json().get("id"),
-            "name": response.json().get("name")
-        })
-        return response.json().get("id"), True, {}
+        response_json = response.json()
+        # Keep the in-run vendor cache in sync so later parallel upserts see this create.
+        with self._target._reference_data_lock:
+            self._target.reference_data["vendors"].append({
+                "id": response_json.get("id"),
+                "name": response_json.get("name"),
+            })
+        return response_json.get("id"), True, {}
     
 
 class AccountSink(AirwallexSink):

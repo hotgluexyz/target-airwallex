@@ -1,6 +1,6 @@
 from hotglue_singer_sdk.target_sdk.auth import OAuthAuthenticator
 from pendulum import parse
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 import json
 from hotglue_etl_exceptions import InvalidCredentialsError
@@ -32,9 +32,16 @@ class AirwallexAuthenticator(OAuthAuthenticator):
             self.expires_in = self._config.get("expires_in")
         if not self.expires_in:
             return False
-        if int(self.expires_in) - int(datetime.utcnow().timestamp()) > 120:
+        if int(self.expires_in) - int(datetime.now(timezone.utc).timestamp()) > 120:
             return True
         return False
+
+    def update_access_token(self) -> None:
+        """Refresh token under a lock so parallel upserts do not race."""
+        with self._target._auth_lock:
+            if self.is_token_valid():
+                return
+            super().update_access_token()
 
     def _update_access_token_locally(self) -> None:
         """Update `access_token` locally."""

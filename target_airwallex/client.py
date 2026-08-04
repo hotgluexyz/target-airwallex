@@ -1,15 +1,19 @@
-from hotglue_singer_sdk.target_sdk.client import HotglueSink
+from concurrent.futures import ThreadPoolExecutor
 import uuid
+
+from hotglue_singer_sdk.target_sdk.client import HotglueSink
 
 from target_airwallex.auth import AirwallexAuthenticator
 
 
 class AirwallexSink(HotglueSink):
+    allows_externalid = ["Vendors", "Accounts"]
+    max_concurrent_requests = 1
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    
-    allows_externalid = ["Vendors", "Accounts"]
-    
+        self._pending_records = []
+
     @property
     def base_url(self) -> str:
         if self.config.get("is_sandbox"):
@@ -46,12 +50,23 @@ class AirwallexSink(HotglueSink):
         return data
 
     def _cached_reference(self, key: str, endpoint: str, fields: list[str]) -> list[dict]:
-        if self._target.reference_data.get(key) is None:
-            rows = self.get_data(endpoint)
-            self._target.reference_data[key] = [
-                {field: row.get(field) for field in fields} for row in rows
-            ]
-        return self._target.reference_data[key]
+        # Fast path: if another thread already loaded this list, reuse it.
+        with self._target._reference_data_lock:
+            cached = self._target.reference_data.get(key)
+            if cached is not None:
+                return cached
+
+        # Fetch outside the lock so we don't block other threads on HTTP.
+        rows = self.get_data(endpoint)
+
+        # Double-check before writing: two threads may have fetched the same key;
+        # only the first one populates the cache.
+        with self._target._reference_data_lock:
+            if self._target.reference_data.get(key) is None:
+                self._target.reference_data[key] = [
+                    {field: row.get(field) for field in fields} for row in rows
+                ]
+            return self._target.reference_data[key]
 
     @property
     def vendors(self) -> list[dict]:
@@ -142,3 +157,31 @@ class AirwallexSink(HotglueSink):
             "Creating new account for missing entities will fail due to duplicate "
             "code/value; updating with fewer entities removes the omitted ones."
         )
+
+    def process_record(self, record: dict, context: dict) -> None:
+        # Flush other sinks first so dependent streams see parent IDs/state.
+        for sink in self._target._sinks_active.values():
+            if sink is not self and hasattr(sink, "flush_pending_records"):
+                sink.flush_pending_records()
+
+        self._pending_records.append((record, context))
+        if len(self._pending_records) >= self.max_concurrent_requests:
+            self.flush_pending_records()
+
+    def flush_pending_records(self) -> None:
+        if not self._pending_records:
+            return
+
+        batch = self._pending_records
+        self._pending_records = []
+
+        with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+            list(
+                pool.map(
+                    lambda item: HotglueSink.process_record(self, item[0], item[1]),
+                    batch,
+                )
+            )
+
+    def clean_up(self) -> None:
+        self.flush_pending_records()
