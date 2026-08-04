@@ -26,8 +26,10 @@ class AirwallexSink(HotglueSink):
 
     @property
     def authenticator(self):
-        auth_endpoint = f"{self.base_url}/authentication/login"
-        return AirwallexAuthenticator(self._target, {}, auth_endpoint)
+        if not hasattr(self, "_authenticator") or self._authenticator is None:
+            auth_endpoint = f"{self.base_url}/authentication/login"
+            self._authenticator = AirwallexAuthenticator(self._target, {}, auth_endpoint)
+        return self._authenticator
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
         return record
