@@ -158,6 +158,16 @@ class AirwallexSink(HotglueSink):
             "code/value; updating with fewer entities removes the omitted ones."
         )
 
+    def init_state(self) -> None:
+        with self._target._state_lock:
+            if self.latest_state:
+                return
+            super().init_state()
+
+    def update_state(self, state: dict, is_duplicate=False, record=None):
+        with self._target._state_lock:
+            return super().update_state(state, is_duplicate=is_duplicate, record=record)
+
     def process_record(self, record: dict, context: dict) -> None:
         # Flush other sinks first so dependent streams see parent IDs/state.
         for sink in self._target._sinks_active.values():

@@ -18,6 +18,8 @@ class TargetAirwallex(TargetHotglue):
     # Shared by all sinks: parallel upserts read/write the same in-memory cache
     # (vendors, accounts). Hold this lock for those mutations.
     _reference_data_lock = threading.Lock()
+    # SDK process_record/update_state mutate latest_state with no internal lock.
+    _state_lock = threading.Lock()
 
     config_jsonschema = th.PropertiesList(
         th.Property("api_key", th.StringType, required=True),
