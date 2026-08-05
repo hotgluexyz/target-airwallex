@@ -1,13 +1,12 @@
 from hotglue_singer_sdk.target_sdk.auth import OAuthAuthenticator
 from pendulum import parse
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 import json
 from hotglue_etl_exceptions import InvalidCredentialsError
 
 
 class AirwallexAuthenticator(OAuthAuthenticator):
-    expires_in = None
     _auth_endpoint = "https://api.airwallex.com/public_api/v1/oauth/token"
     oauth_request_body = {}
 
@@ -19,22 +18,26 @@ class AirwallexAuthenticator(OAuthAuthenticator):
             "x-api-key": self._config["api_key"],
             "x-client-id": self._config["client_id"]
         }
-    
 
     def is_token_valid(self) -> bool:
-        """Check if token is valid.
+        """Return True when shared target config still has a fresh token.
 
-        Returns:
-            True if the token is valid (fresh).
+        Always read from ``_config`` (not instance attrs) so workers that
+        checked validity before acquiring ``_auth_lock`` still see the token
+        written by the first refresher.
         """
-        # if expires_in is not set, try to get it from the tap config
-        if self.expires_in is None and self._config.get("expires_in"):
-            self.expires_in = self._config.get("expires_in")
-        if not self.expires_in:
+        access_token = self._config.get("access_token")
+        expires_in = self._config.get("expires_in")
+        if not access_token or expires_in is None:
             return False
-        if int(self.expires_in) - int(datetime.utcnow().timestamp()) > 120:
-            return True
-        return False
+        return int(expires_in) - int(datetime.now(timezone.utc).timestamp()) > 120
+
+    def update_access_token(self) -> None:
+        """Refresh token under a lock so parallel upserts do not race."""
+        with self._target._auth_lock:
+            if self.is_token_valid():
+                return
+            super().update_access_token()
 
     def _update_access_token_locally(self) -> None:
         """Update `access_token` locally."""
@@ -49,12 +52,11 @@ class AirwallexAuthenticator(OAuthAuthenticator):
             )
         token_json = token_response.json()
         self.access_token = token_json["token"]
-        expires_in = token_json.get("expires_at")
-        self.expires_in = parse(expires_in).timestamp()
+        expires_in = parse(token_json.get("expires_at")).timestamp()
 
-        # Update the target config with the new access_token and expires_in
+        # Shared across all authenticator instances / worker threads.
         self._config["access_token"] = token_json["token"]
-        self._config["expires_in"] = self.expires_in
+        self._config["expires_in"] = expires_in
 
         # Write the updated config back to the file (only when config was loaded from a path)
         if self._config_file_path is not None:
