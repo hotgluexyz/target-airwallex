@@ -108,3 +108,24 @@ class AccountingFieldsValuesSink(AirwallexSink):
             "POST", endpoint, request_data=record
         )   
         return response.json().get("id"), True, state
+
+
+class TaxRatesSink(AirwallexSink):
+    name = "tax_rates"
+    endpoint = "/accounting/tax_codes/create"
+
+    def upsert_record(self, record: dict, context: dict):
+        state = {}
+        endpoint = self.endpoint
+
+        if record.get("id"):
+            endpoint = f"/accounting/tax_codes/{record.pop('id')}/update"
+            state["is_updated"] = True
+            record["status"] = record.get("status", "ACTIVE")
+        else:
+            record = self.add_request_id(record)
+
+        response = self.request_api(
+            "POST", endpoint, request_data=record
+        )   
+        return response.json().get("id"), True, state
