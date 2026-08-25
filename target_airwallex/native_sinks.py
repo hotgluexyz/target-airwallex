@@ -87,7 +87,7 @@ class AccountingFieldsSink(AirwallexSink):
 
         # NOTE: in case all the custom fields have numbers we would  keep previous logic 
         # and iterate over all the fields and check which slots are taken, 
-        # e.g. there were cases where 2 and 4 were taken but 2 was not, so we would use that one.
+        # e.g. there were cases where 2 and 4 were taken but 3 was not, so we would use that one.
         if not used_not_numbers:
             for n in range(1, MAX_ACCOUNTING_FIELDS + 1):
                 if n not in used_numbers:
