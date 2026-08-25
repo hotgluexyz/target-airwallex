@@ -1,13 +1,13 @@
 from target_airwallex.client import AirwallexSink
 
-MAX_ACCOUNTING_FIELDS = 5
+MAX_ACCOUNTING_FIELDS = 20
 
 
 class AccountingFieldsSink(AirwallexSink):
     """Native Airwallex accounting custom fields (not unified schema).
 
     Airwallex quirks this sink has to handle:
-    - Max 5 custom fields per account.
+    - Max 20 custom fields per account.
     - `name_label` is the user-facing label (what we match on).
     - `name` is an internal slot Airwallex assigns like "Custom field 1"..N.
       On create we pick the next free slot; on update we must send the existing
@@ -23,11 +23,14 @@ class AccountingFieldsSink(AirwallexSink):
         update_reference_date = True
 
         # Match an existing field by display label.
+        # NOTE: AWX docs say only available values for name are Custom field N, 
+        # but we've seen Custom fields where the name is the same as the name_label. (HGI-11058)
+        # so we check both.
         accounting_field = next(
             (
                 af
                 for af in self.accounting_fields
-                if ((record.get("id") == af.get("id")) or (af.get("name_label") == record.get("name_label")))
+                if ((record.get("id") == af.get("id")) or (af.get("name_label") == record.get("name_label") or af.get("name") == record.get("name_label")))
             ),
             None,
         )
@@ -70,17 +73,37 @@ class AccountingFieldsSink(AirwallexSink):
         return field_id, True, state
 
     def _next_custom_field_name(self) -> str:
-        """Return the next free Airwallex slot name in Custom field 1–5."""
-        used = {
-            int(af.get("name").split(" ")[-1])
-            for af in self.accounting_fields
-            if af.get("name")
-        }
-        for n in range(1, MAX_ACCOUNTING_FIELDS + 1):
-            if n not in used:
-                return f"Custom field {n}"
-        raise Exception("No free Custom field slots available (1–5)")
+        """Return the next free Airwallex slot name in Custom field 1–20."""
+        # NOTE: AWX docs say only available values for name are Custom field N, 
+        # but we've seen Custom fields where the name is the same as the name_label. (HGI-11058)
+        used_numbers = set()
+        used_not_numbers = set()
+        for af in self.accounting_fields:
+            if af.get("name"):
+                try:
+                    used_numbers.add(int(af.get("name").split(" ")[-1]))
+                except:
+                    used_not_numbers.add(af.get("name"))
 
+        # NOTE: in case all the custom fields have numbers we would  keep previous logic 
+        # and iterate over all the fields and check which slots are taken, 
+        # e.g. there were cases where 2 and 4 were taken but 2 was not, so we would use that one.
+        if not used_not_numbers:
+            for n in range(1, MAX_ACCOUNTING_FIELDS + 1):
+                if n not in used_numbers:
+                    return f"Custom field {n}"
+            raise Exception("No free Custom field slots available (1–20)")
+        
+        else:
+            # NOTE: in case some custom fields have numbers and some don't we can't reliably check for the next free number
+            # so in case there are numbers and the max number is equal or greater than the number of custom fields, we can use the next number
+            # otherwise we can only try to use the len(custom fields) + 1, this could still be taken.
+            max_used_number = max(used_numbers) if used_numbers else 0
+            if max_used_number >= len(self.accounting_fields) and max_used_number + 1 <= MAX_ACCOUNTING_FIELDS:
+                return f"Custom field {max_used_number + 1}"
+            else:
+                return f"Custom field {len(self.accounting_fields) + 1}"        
+        raise Exception("No free Custom field slots available (1–20)")
 
 class AccountingFieldsValuesSink(AirwallexSink):
     name = "accounting_field_values"
