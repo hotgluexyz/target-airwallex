@@ -173,17 +173,17 @@ class UpdateSyncStatusSink(AirwallexSink):
 
 class BillsSyncSink(UpdateSyncStatusSink):
     name = "bills_sync"
-    endpoint = "/api/v1/spend/bills/bill_id/sync"
+    endpoint = "/spend/bills/bill_id/sync"
     entity = "bill"
 
 
 class ExpensesSyncSink(UpdateSyncStatusSink):
     name = "expenses_sync"
-    endpoint = "/api/v1/spend/expenses/expense_id/sync"
+    endpoint = "/spend/expenses/expense_id/sync"
     entity = "expense"
 
 
 class VendorsSyncSink(UpdateSyncStatusSink):
     name = "vendors_sync"
-    endpoint = "/api/v1/spend/vendors/vendor_id/sync"
+    endpoint = "/spend/vendors/vendor_id/sync"
     entity = "vendor"
