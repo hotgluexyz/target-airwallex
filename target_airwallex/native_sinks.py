@@ -181,9 +181,3 @@ class ExpensesSyncSink(UpdateSyncStatusSink):
     name = "expenses_sync"
     endpoint = "/spend/expenses/expense_id/sync"
     entity = "expense"
-
-
-class VendorsSyncSink(UpdateSyncStatusSink):
-    name = "vendors_sync"
-    endpoint = "/spend/vendors/vendor_id/sync"
-    entity = "vendor"

@@ -166,9 +166,9 @@ class AirwallexSink(HotglueSink):
                 return
             super().init_state()
 
-    def update_state(self, state: dict, is_duplicate=False, record=None):
+    def update_state(self, state: dict, is_duplicate=False, record=None, snapshot_field_values=None):
         with self._target._state_lock:
-            return super().update_state(state, is_duplicate=is_duplicate, record=record)
+            return super().update_state(state, is_duplicate=is_duplicate, record=record, snapshot_field_values=snapshot_field_values)
 
     def process_record(self, record: dict, context: dict) -> None:
         # Flush other sinks first so dependent streams see parent IDs/state.
