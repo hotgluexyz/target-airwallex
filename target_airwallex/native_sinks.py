@@ -105,6 +105,7 @@ class AccountingFieldsSink(AirwallexSink):
                 return f"Custom field {len(self.accounting_fields) + 1}"        
         raise Exception("No free Custom field slots available (1–20)")
 
+
 class AccountingFieldsValuesSink(AirwallexSink):
     name = "accounting_field_values"
     endpoint = "/accounting/accounting_field_values/create"
@@ -152,3 +153,37 @@ class TaxRatesSink(AirwallexSink):
             "POST", endpoint, request_data=record
         )   
         return response.json().get("id"), True, state
+
+
+class UpdateSyncStatusSink(AirwallexSink):
+
+    def upsert_record(self, record: dict, context: dict):
+        state = {}
+        entity_id = record.pop("id", None)
+        if not entity_id:
+            raise Exception(f"{self.entity} ID is required to update the {self.entity} sync status")
+
+        endpoint = self.endpoint.replace(f"{self.entity}_id", entity_id)
+
+        response = self.request_api(
+            "POST", endpoint, request_data=record
+        )   
+        return response.json().get("id"), True, state
+
+
+class BillsSyncSink(UpdateSyncStatusSink):
+    name = "bills_sync"
+    endpoint = f"/api/v1/spend/bills/bill_id/sync"
+    entity = "bill"
+
+
+class ExpensesSyncSink(UpdateSyncStatusSink):
+    name = "expenses_sync"
+    endpoint = f"/api/v1/spend/expenses/expense_id/sync"
+    entity = "expense"
+
+
+class VendorsSyncSink(UpdateSyncStatusSink):
+    name = "vendors_sync"
+    endpoint = f"/api/v1/spend/vendors/vendor_id/sync"
+    entity = "vendor"
