@@ -6,7 +6,7 @@ from hotglue_singer_sdk import typing as th
 from hotglue_singer_sdk.target_sdk.target import TargetHotglue
 
 from target_airwallex.unified_sinks import VendorSink, AccountSink
-from target_airwallex.native_sinks import AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink
+from target_airwallex.native_sinks import AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink, ReimbursementsSyncSink
 
 
 class TargetAirwallex(TargetHotglue):
@@ -27,7 +27,7 @@ class TargetAirwallex(TargetHotglue):
         th.Property("is_sandbox", th.BooleanType, required=False, default=False),
     ).to_dict()
 
-    SINK_TYPES = [VendorSink, AccountSink, AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink]
+    SINK_TYPES = [VendorSink, AccountSink, AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink, ReimbursementsSyncSink]
 
 if __name__ == "__main__":
     TargetAirwallex.cli()
