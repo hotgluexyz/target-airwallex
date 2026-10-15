@@ -185,5 +185,5 @@ class ExpensesSyncSink(UpdateSyncStatusSink):
 
 class ReimbursementsSyncSink(UpdateSyncStatusSink):
     name = "reimbursements_sync"
-    endpoint = "/spend/reimbursements_reports/reimbursement_id/sync"
+    endpoint = "/spend/reimbursement_reports/reimbursement_id/sync"
     entity = "reimbursement"
