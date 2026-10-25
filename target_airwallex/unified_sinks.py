@@ -119,3 +119,34 @@ class AccountSink(AirwallexSink):
         else:
             accounts.append(account_entry)
         return response_json.get("id"), True, state
+
+
+class BillSink(AirwallexSink):
+    """Create Airwallex Spend bills from approved ERP supplier invoices."""
+
+    name = "Bills"
+    endpoint = "/spend/bills/create"
+
+    def preprocess_record(self, record: dict, context: dict) -> dict:
+        record = dict(record)
+        vendor_external_id = record.pop("vendor_external_id")
+        vendor_id = self.state_id_for_external_id("Vendors", vendor_external_id)
+        if not vendor_id:
+            raise ValueError(
+                f"Fulfil supplier '{vendor_external_id}' has not been created in Airwallex. "
+                "Emit Vendors before Bills."
+            )
+        for line in record.get("line_items", []):
+            account_external_id = line.pop("account_external_id", None)
+            account_id = self.state_id_for_external_id("Accounts", account_external_id)
+            if not account_id:
+                raise ValueError(
+                    f"Fulfil account '{account_external_id}' has not been created in Airwallex. "
+                    "Emit Accounts before Bills."
+                )
+            line["accounting_field_selections"] = [
+                {"type": "GENERAL_LEDGER_ACCOUNT", "source_id": account_id}
+            ]
+        record["vendor_id"] = vendor_id
+        record["external_id"] = record.pop("externalId")
+        return self.add_request_id(record)

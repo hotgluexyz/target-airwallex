@@ -7,7 +7,7 @@ from target_airwallex.auth import AirwallexAuthenticator
 
 
 class AirwallexSink(HotglueSink):
-    allows_externalid = ["Vendors", "Accounts"]
+    allows_externalid = ["Vendors", "Accounts", "Bills"]
     max_concurrent_requests = 1
 
     def __init__(self, *args, **kwargs):
