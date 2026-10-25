@@ -174,6 +174,15 @@ class AirwallexSink(HotglueSink):
             if self.latest_state:
                 return
             super().init_state()
+            if not self._target._latest_state:
+                self._target._latest_state = self.latest_state
+            else:
+                shared_state = self._target._latest_state
+                for section in ("bookmarks", "summary"):
+                    shared_state.setdefault(section, {}).setdefault(
+                        self.name, self.latest_state[section][self.name]
+                    )
+                self.latest_state = shared_state
 
     def update_state(self, state: dict, is_duplicate=False, record=None, snapshot_field_values=None):
         with self._target._state_lock:

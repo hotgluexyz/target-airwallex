@@ -15,6 +15,7 @@ class VendorSink(AirwallexSink):
             "name": record.get("vendorName"),
             "legal_entity_ids": record.get("legal_entity_ids"),
             "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
+            "sync_status": "SYNCED",
         }
 
         if address:

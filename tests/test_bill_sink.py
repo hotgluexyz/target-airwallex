@@ -1,8 +1,15 @@
 """Contract tests for Fulfil supplier invoice imports."""
 
+import io
+import json
 import threading
+import time
+
+import pytest
+import requests
 
 from target_airwallex.client import AirwallexSink
+from target_airwallex.target import TargetAirwallex
 from target_airwallex.unified_sinks import BillSink, VendorSink
 
 
@@ -127,6 +134,94 @@ def test_vendor_sends_required_legal_entity_and_not_internal_external_id():
             "name": "Supplier 10",
             "legal_entity_ids": ["le-10"],
             "status": "ACTIVE",
+            "sync_status": "SYNCED",
             "request_id": "request-1",
         },
     }
+
+
+@pytest.mark.parametrize("reject_vendors", [False, True])
+def test_singer_input_preserves_buffered_vendor_results_for_bills(
+    monkeypatch, tmp_path, reject_vendors
+):
+    bill_requests = []
+
+    def request(method, url, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response.url = url
+        body = json.loads(kwargs.get("data") or "{}")
+        if method == "GET":
+            result = {"items": []}
+        elif url.endswith("/spend/vendors/create"):
+            assert body["sync_status"] == "SYNCED"
+            assert body["legal_entity_ids"] == ["le-10"]
+            if reject_vendors:
+                response.status_code = 400
+                result = {"message": "Vendor rejected"}
+            else:
+                result = {"id": "awx-" + body["external_id"], "name": body["name"]}
+        elif url.endswith("/accounting/gl_accounts/create"):
+            result = {**body, "id": "awx-account-40"}
+        elif url.endswith("/spend/bills/create"):
+            bill_requests.append(body)
+            result = {"id": "awx-" + body["external_id"]}
+        else:
+            raise AssertionError(f"Unexpected request: {method} {url}")
+        response._content = json.dumps(result).encode()
+        return response
+
+    monkeypatch.setattr(requests, "request", request)
+    target = TargetAirwallex(config={
+        "api_key": "test-only",
+        "client_id": "test-only",
+        "access_token": "test-only",
+        "expires_in": int(time.time()) + 3600,
+    })
+    target.reference_data = {}
+    target.incremental_target_state_path = str(tmp_path / "state.json")
+    streams = {
+        "Accounts": [{
+            "externalId": "account-40", "accountNumber": "4000", "name": "Supplies",
+            "isActive": True, "subsidiaryRef": [{"id": "le-10"}],
+        }],
+        "Vendors": [
+            {"externalId": vendor, "vendorName": vendor, "isActive": True,
+             "legal_entity_ids": ["le-10"]}
+            for vendor in ("supplier-10", "supplier-20")
+        ],
+        "Bills": [
+            {"externalId": invoice, "vendor_external_id": vendor,
+             "line_items": [{"account_external_id": "account-40", "unit_price": "25"}]}
+            for invoice, vendor in (("invoice-1", "supplier-20"), ("invoice-2", "supplier-10"))
+        ],
+    }
+    messages = []
+    for stream, records in streams.items():
+        messages.append({
+            "type": "SCHEMA", "stream": stream,
+            "schema": {"type": "object", "properties": {key: {} for key in records[0]}},
+            "key_properties": [],
+        })
+        messages.extend({"type": "RECORD", "stream": stream, "record": row} for row in records)
+        messages.append({"type": "STATE", "value": {}})
+    try:
+        target.listen(io.StringIO("\n".join(json.dumps(message) for message in messages)))
+    finally:
+        target._shutdown_requested.set()
+
+    state = target._latest_state
+    for stream in ("Vendors", "Bills"):
+        assert state["summary"][stream]["fail"] == (2 if reject_vendors else 0)
+        assert state["summary"][stream]["success"] == (0 if reject_vendors else 2)
+        assert len(state["bookmarks"][stream]) == 2
+    if reject_vendors:
+        assert bill_requests == []
+    else:
+        assert [bill["vendor_id"] for bill in bill_requests] == ["awx-supplier-20", "awx-supplier-10"]
+        assert all(
+            line["accounting_field_selections"] == [
+                {"type": "GENERAL_LEDGER_ACCOUNT", "source_id": "awx-account-40"}
+            ]
+            for bill in bill_requests for line in bill["line_items"]
+        )
