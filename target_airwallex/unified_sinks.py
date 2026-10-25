@@ -13,15 +13,18 @@ class VendorSink(AirwallexSink):
             "externalId": record.get("externalId"),
             "external_id": record.get("externalId"),
             "name": record.get("vendorName"),
-            "address": {
+            "legal_entity_ids": record.get("legal_entity_ids"),
+            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
+        }
+
+        if address:
+            payload["address"] = {
                 "street_address": address.get("line1"),
                 "city": address.get("city"),
                 "state": address.get("state"),
                 "postcode": address.get("zipCode"),
-                "country_code": address.get("country")
-            },
-            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
-        }
+                "country_code": address.get("country"),
+            }
 
         if email:
             payload.update({
@@ -52,7 +55,9 @@ class VendorSink(AirwallexSink):
         
         endpoint = self.endpoint
         method = "POST"
-        response = self.request_api(method, endpoint, request_data=record)
+        request_record = dict(record)
+        request_record.pop("externalId", None)
+        response = self.request_api(method, endpoint, request_data=request_record)
         response_json = response.json()
         # Keep the in-run vendor cache in sync so later parallel upserts see this create.
         with self._target._reference_data_lock:

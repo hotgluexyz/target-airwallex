@@ -3,7 +3,7 @@
 import threading
 
 from target_airwallex.client import AirwallexSink
-from target_airwallex.unified_sinks import BillSink
+from target_airwallex.unified_sinks import BillSink, VendorSink
 
 
 def bill_sink_with_state(state):
@@ -91,3 +91,42 @@ def test_state_id_for_external_id_uses_successful_record_state():
 
     assert sink.state_id_for_external_id("Vendors", "supplier-10") == "vendor-awx-10"
     assert sink.state_id_for_external_id("Vendors", "missing") is None
+
+
+def test_vendor_sends_required_legal_entity_and_not_internal_external_id():
+    sink = object.__new__(VendorSink)
+    sink.add_request_id = lambda record: {**record, "request_id": "request-1"}
+    sink._target = type(
+        "Target",
+        (), {"_reference_data_lock": threading.Lock(), "reference_data": {"vendors": []}},
+    )()
+    sink._cached_reference = lambda *args: []
+    sent = {}
+    sink.request_api = lambda method, endpoint, request_data: (
+        sent.update({"method": method, "endpoint": endpoint, "body": request_data})
+        or type("Response", (), {"json": lambda self: {"id": "vendor-awx-10"}})()
+    )
+
+    record = sink.preprocess_record(
+        {
+            "externalId": "supplier-10",
+            "vendorName": "Supplier 10",
+            "legal_entity_ids": ["le-10"],
+            "isActive": True,
+            "addresses": [],
+        },
+        {},
+    )
+    sink.upsert_record(record, {})
+
+    assert sent == {
+        "method": "POST",
+        "endpoint": "/spend/vendors/create",
+        "body": {
+            "external_id": "supplier-10",
+            "name": "Supplier 10",
+            "legal_entity_ids": ["le-10"],
+            "status": "ACTIVE",
+            "request_id": "request-1",
+        },
+    }
