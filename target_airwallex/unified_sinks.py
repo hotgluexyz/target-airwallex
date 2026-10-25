@@ -1,3 +1,7 @@
+from copy import deepcopy
+import json
+import uuid
+
 from target_airwallex.client import AirwallexSink
 
 
@@ -134,7 +138,7 @@ class BillSink(AirwallexSink):
     endpoint = "/spend/bills/create"
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
-        record = dict(record)
+        record = deepcopy(record)
         vendor_external_id = record.pop("vendor_external_id")
         vendor_id = self.state_id_for_external_id("Vendors", vendor_external_id)
         if not vendor_id:
@@ -154,5 +158,42 @@ class BillSink(AirwallexSink):
                 {"type": "GENERAL_LEDGER_ACCOUNT", "source_id": account_id}
             ]
         record["vendor_id"] = vendor_id
-        record["external_id"] = record.pop("externalId")
-        return self.add_request_id(record)
+        record["external_id"] = record["externalId"]
+        # A retry after a lost response must use the same create request ID.
+        identity = json.dumps([record["legal_entity_id"], str(record["externalId"])])
+        record["request_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, "airwallex-bill:" + identity))
+        return record
+
+    def upsert_record(self, record: dict, context: dict):
+        if record.get("id"):
+            return record["id"], True, {"existing": True}
+
+        entity_id = record["legal_entity_id"]
+        cache_key = ("bills", entity_id)
+        if cache_key not in self._target.reference_data:
+            # The API defaults to the last 30 days without an explicit start.
+            params = {"legal_entity_id": entity_id, "from_created_at": "1970-01-01T00:00:00Z"}
+            bills = []
+            while True:
+                page = self.request_api("GET", "/spend/bills", params=params).json()
+                bills.extend(page.get("items", []))
+                cursor = page.get("page_after")
+                if not cursor:
+                    break
+                params["page"] = cursor
+            self._target.reference_data[cache_key] = bills
+
+        bills = self._target.reference_data[cache_key]
+        existing = next((bill for bill in bills
+                         if bill.get("legal_entity_id") == entity_id
+                         and str(bill.get("external_id")) == str(record["external_id"])), None)
+        if existing:
+            return existing["id"], True, {"existing": True}
+
+        payload = dict(record)
+        payload.pop("externalId", None)
+        payload.pop("id", None)
+        result = self.request_api("POST", self.endpoint, request_data=payload).json()
+        bills.append({"id": result["id"], "external_id": record["external_id"],
+                      "legal_entity_id": entity_id})
+        return result["id"], True, {}
