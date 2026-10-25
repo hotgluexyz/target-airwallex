@@ -1,5 +1,8 @@
 """Contract tests for Fulfil supplier invoice imports."""
 
+import threading
+
+from target_airwallex.client import AirwallexSink
 from target_airwallex.unified_sinks import BillSink
 
 
@@ -72,3 +75,19 @@ def test_bill_requires_account_state_for_each_line():
         )
     else:
         raise AssertionError("Expected a missing Airwallex GL account error")
+
+
+def test_state_id_for_external_id_uses_successful_record_state():
+    sink = object.__new__(AirwallexSink)
+    sink._target = type("Target", (), {"_state_lock": threading.Lock()})()
+    sink.latest_state = {
+        "bookmarks": {
+            "Vendors": [
+                {"success": False, "externalId": "supplier-10", "id": "failed-id"},
+                {"success": True, "externalId": "supplier-10", "id": "vendor-awx-10"},
+            ]
+        }
+    }
+
+    assert sink.state_id_for_external_id("Vendors", "supplier-10") == "vendor-awx-10"
+    assert sink.state_id_for_external_id("Vendors", "missing") is None

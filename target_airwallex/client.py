@@ -127,6 +127,15 @@ class AirwallexSink(HotglueSink):
         record["id"] = account.get("id")
         return record, True
 
+    def state_id_for_external_id(self, stream: str, external_id: str) -> str | None:
+        """Find a successful prior record's Airwallex ID by its external ID."""
+        with self._target._state_lock:
+            states = self.latest_state.get("bookmarks", {}).get(stream, [])
+            for state in reversed(states):
+                if state.get("success") and str(state.get("externalId")) == str(external_id):
+                    return state.get("id")
+        return None
+
     def _raise_if_account_conflict(self, code, value, by_code, by_value) -> None:
         if by_code and by_code.get("value") != value:
             raise ValueError(
