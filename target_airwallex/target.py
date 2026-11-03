@@ -30,14 +30,29 @@ class TargetAirwallex(TargetHotglue):
     SINK_TYPES = [VendorSink, AccountSink, AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink]
 
     def merge_sink_state(self, sink) -> None:
-        """
-        If there's less records than the batch size, we need to Copy a sink's 
-        latest_state into target _latest_state, so it's properly written.
-        """
+        """Merge sink bookmarks/summary into target _latest_state for final emit."""
         sink_latest_state = getattr(sink, "latest_state", None)
         if not sink_latest_state:
             return
         with self._state_lock:
+            if self.streaming_job:
+                if not self._latest_state:
+                    self._latest_state = {"tap": {}, "target": {}}
+                target_bucket = self._latest_state.get("target")
+                if not target_bucket:
+                    self._latest_state["target"] = sink_latest_state
+                    return
+                for key in ("bookmarks", "summary"):
+                    part = sink_latest_state.get(key)
+                    if not isinstance(part, dict):
+                        continue
+                    if key not in target_bucket or not isinstance(
+                        target_bucket[key], dict
+                    ):
+                        target_bucket[key] = {}
+                    target_bucket[key].update(part)
+                return
+
             if not self._latest_state:
                 self._latest_state = sink_latest_state
                 return
