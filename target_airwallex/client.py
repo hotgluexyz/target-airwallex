@@ -194,7 +194,6 @@ class AirwallexSink(HotglueSink):
                     batch,
                 )
             )
-        self._target.merge_sink_state(self)
 
     def clean_up(self) -> None:
         self.flush_pending_records()
