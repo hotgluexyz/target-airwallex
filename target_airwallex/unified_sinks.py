@@ -7,6 +7,9 @@ class VendorSink(AirwallexSink):
     max_concurrent_requests = 20
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
+        if record.get("id"):
+            return {"existing": True, "id": record.get("id")}
+        
         address = record.get("addresses")[0] if record.get("addresses") else {}
         email = record.get("email")
         payload = {
@@ -38,6 +41,9 @@ class VendorSink(AirwallexSink):
         return self.add_request_id(payload)
 
     def upsert_record(self, record: dict, context: dict):
+        if record.get("existing"):
+            return record.get("id"), True, {"existing": True}
+        
         # lookup vendor by name
         vendor = next((v for v in self.vendors if v.get("name") == record.get("name")), None)
         if vendor:

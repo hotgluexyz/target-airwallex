@@ -29,5 +29,38 @@ class TargetAirwallex(TargetHotglue):
 
     SINK_TYPES = [VendorSink, AccountSink, AccountingFieldsSink, AccountingFieldsValuesSink, TaxRatesSink, BillsSyncSink, ExpensesSyncSink]
 
+    def _sync_sink_state_for_emit(self, sink) -> None:
+        """Copy flushed sink state into _latest_state before SDK snapshots it."""
+        sink_latest_state = getattr(sink, "latest_state", None)
+        if not sink_latest_state:
+            return
+        with self._state_lock:
+            if not self._latest_state:
+                self._latest_state = sink_latest_state
+                return
+            for key in ("bookmarks", "summary"):
+                part = sink_latest_state.get(key)
+                if not isinstance(part, dict):
+                    continue
+                if key not in self._latest_state or not isinstance(
+                    self._latest_state[key], dict
+                ):
+                    self._latest_state[key] = {}
+                self._latest_state[key].update(part)
+
+    def drain_all(self, is_endofpipe: bool = False) -> None:
+        # Batched sinks may still have pending records; SDK deep-copies state before clean_up.
+        if is_endofpipe:
+            for sink in self._sinks_to_clear:
+                if sink and hasattr(sink, "flush_pending_records"):
+                    sink.flush_pending_records()
+                self._sync_sink_state_for_emit(sink)
+            for sink in self._sinks_active.values():
+                if sink and hasattr(sink, "flush_pending_records"):
+                    sink.flush_pending_records()
+                self._sync_sink_state_for_emit(sink)
+        super().drain_all(is_endofpipe=is_endofpipe)
+
+
 if __name__ == "__main__":
     TargetAirwallex.cli()
