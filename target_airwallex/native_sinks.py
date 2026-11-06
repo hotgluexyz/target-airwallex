@@ -165,6 +165,14 @@ class UpdateSyncStatusSink(AirwallexSink):
 
         endpoint = self.endpoint.replace(f"{self.entity}_id", entity_id)
 
+        # check if status is already set to SYNCED if so, return the id and True, state
+        record = self.request_api(
+            "GET", f"/spend/bills/{entity_id}"
+        ).json()
+        if record.get("sync_status") == "SYNCED":
+            self.logger.info(f"Record {entity_id} is already marked as synced, skipping update")
+            return record.get("id"), True, state
+
         response = self.request_api(
             "POST", endpoint, request_data=record
         )   
