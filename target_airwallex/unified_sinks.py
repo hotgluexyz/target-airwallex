@@ -1,3 +1,7 @@
+from copy import deepcopy
+import json
+import uuid
+
 from target_airwallex.client import AirwallexSink
 
 
@@ -16,15 +20,19 @@ class VendorSink(AirwallexSink):
             "externalId": record.get("externalId"),
             "external_id": record.get("externalId"),
             "name": record.get("vendorName"),
-            "address": {
+            "legal_entity_ids": record.get("legal_entity_ids"),
+            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
+            "sync_status": "SYNCED",
+        }
+
+        if address:
+            payload["address"] = {
                 "street_address": address.get("line1"),
                 "city": address.get("city"),
                 "state": address.get("state"),
                 "postcode": address.get("zipCode"),
-                "country_code": address.get("country")
-            },
-            "status": "ARCHIVED" if not record.get("isActive") else "ACTIVE",
-        }
+                "country_code": address.get("country"),
+            }
 
         if email:
             payload.update({
@@ -58,7 +66,9 @@ class VendorSink(AirwallexSink):
         
         endpoint = self.endpoint
         method = "POST"
-        response = self.request_api(method, endpoint, request_data=record)
+        request_record = dict(record)
+        request_record.pop("externalId", None)
+        response = self.request_api(method, endpoint, request_data=request_record)
         response_json = response.json()
         # Keep the in-run vendor cache in sync so later parallel upserts see this create.
         with self._target._reference_data_lock:
@@ -125,3 +135,71 @@ class AccountSink(AirwallexSink):
         else:
             accounts.append(account_entry)
         return response_json.get("id"), True, state
+
+
+class BillSink(AirwallexSink):
+    """Create Airwallex Spend bills from approved ERP supplier invoices."""
+
+    name = "Bills"
+    endpoint = "/spend/bills/create"
+
+    def preprocess_record(self, record: dict, context: dict) -> dict:
+        record = deepcopy(record)
+        vendor_external_id = record.pop("vendor_external_id")
+        vendor_id = self.state_id_for_external_id("Vendors", vendor_external_id)
+        if not vendor_id:
+            raise ValueError(
+                f"Fulfil supplier '{vendor_external_id}' has not been created in Airwallex. "
+                "Emit Vendors before Bills."
+            )
+        for line in record.get("line_items", []):
+            account_external_id = line.pop("account_external_id", None)
+            account_id = self.state_id_for_external_id("Accounts", account_external_id)
+            if not account_id:
+                raise ValueError(
+                    f"Fulfil account '{account_external_id}' has not been created in Airwallex. "
+                    "Emit Accounts before Bills."
+                )
+            line["accounting_field_selections"] = [
+                {"type": "GENERAL_LEDGER_ACCOUNT", "source_id": account_id}
+            ]
+        record["vendor_id"] = vendor_id
+        record["external_id"] = record["externalId"]
+        # A retry after a lost response must use the same create request ID.
+        identity = json.dumps([record["legal_entity_id"], str(record["externalId"])])
+        record["request_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, "airwallex-bill:" + identity))
+        return record
+
+    def upsert_record(self, record: dict, context: dict):
+        if record.get("id"):
+            return record["id"], True, {"existing": True}
+
+        entity_id = record["legal_entity_id"]
+        cache_key = ("bills", entity_id)
+        if cache_key not in self._target.reference_data:
+            # The API defaults to the last 30 days without an explicit start.
+            params = {"legal_entity_id": entity_id, "from_created_at": "1970-01-01T00:00:00Z"}
+            bills = []
+            while True:
+                page = self.request_api("GET", "/spend/bills", params=params).json()
+                bills.extend(page.get("items", []))
+                cursor = page.get("page_after")
+                if not cursor:
+                    break
+                params["page"] = cursor
+            self._target.reference_data[cache_key] = bills
+
+        bills = self._target.reference_data[cache_key]
+        existing = next((bill for bill in bills
+                         if bill.get("legal_entity_id") == entity_id
+                         and str(bill.get("external_id")) == str(record["external_id"])), None)
+        if existing:
+            return existing["id"], True, {"existing": True}
+
+        payload = dict(record)
+        payload.pop("externalId", None)
+        payload.pop("id", None)
+        result = self.request_api("POST", self.endpoint, request_data=payload).json()
+        bills.append({"id": result["id"], "external_id": record["external_id"],
+                      "legal_entity_id": entity_id})
+        return result["id"], True, {}

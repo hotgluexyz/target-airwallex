@@ -1,9 +1,10 @@
+import json
+from datetime import datetime, timezone
+
+import requests
+from hotglue_etl_exceptions import InvalidCredentialsError
 from hotglue_singer_sdk.target_sdk.auth import OAuthAuthenticator
 from pendulum import parse
-from datetime import datetime, timezone
-import requests
-import json
-from hotglue_etl_exceptions import InvalidCredentialsError
 
 
 class AirwallexAuthenticator(OAuthAuthenticator):
@@ -16,7 +17,7 @@ class AirwallexAuthenticator(OAuthAuthenticator):
         return {
             "Content-Type": "application/json",
             "x-api-key": self._config["api_key"],
-            "x-client-id": self._config["client_id"]
+            "x-client-id": self._config["client_id"],
         }
 
     def is_token_valid(self) -> bool:
@@ -33,11 +34,15 @@ class AirwallexAuthenticator(OAuthAuthenticator):
         return int(expires_in) - int(datetime.now(timezone.utc).timestamp()) > 120
 
     def update_access_token(self) -> None:
-        """Refresh token under a lock so parallel upserts do not race."""
+        """Refresh directly with Airwallex under a lock.
+
+        This target receives the API key and client ID in its runtime config, so it
+        must not request a connector access token from the Hotglue API first.
+        """
         with self._target._auth_lock:
             if self.is_token_valid():
                 return
-            super().update_access_token()
+            self._update_access_token_locally()
 
     def _update_access_token_locally(self) -> None:
         """Update `access_token` locally."""
